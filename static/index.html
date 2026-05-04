@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Геоаналитика</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+
+    #header {
+      background: #1e3a5f; color: #eee;
+      padding: 10px 16px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; z-index: 10;
+    }
+    #header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }
+    .ctrl-group { display: flex; align-items: center; gap: 8px; }
+    .ctrl-group label { font-size: 13px; color: #cce; }
+    select, button {
+      background: #2a4a7a; color: #eee; border: 1px solid #4a7aaa;
+      border-radius: 4px; padding: 5px 10px; font-size: 13px; cursor: pointer;
+    }
+    .layer-btn.active { background: #4a8abf; border-color: #6caadf; }
+
+    #map { flex: 1; position: relative; }
+
+
+    #legend {
+      position: absolute; bottom: 36px; right: 12px; z-index: 5;
+      background: rgba(255,255,255,0.93); border-radius: 8px;
+      padding: 10px 14px; font-size: 12px; color: #333; min-width: 160px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.18); pointer-events: none;
+    }
+    #legend h3 { font-size: 12px; margin-bottom: 6px; color: #666; }
+    .legend-bar {
+      height: 12px; border-radius: 3px; margin-bottom: 4px;
+      background: linear-gradient(to right, #2166ac, #74add1, #e0f3f8, #fdae61, #d73027);
+    }
+    .legend-labels { display: flex; justify-content: space-between; color: #888; }
+    .legend-pattern-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; }
+    .legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
+    #hex-card {
+      position: absolute; top: 12px; right: 12px; z-index: 10;
+      background: rgba(255,255,255,0.97); border-radius: 10px;
+      padding: 14px 16px; color: #222; font-size: 13px;
+      min-width: 240px; max-width: 300px; display: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+    }
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+    #hex-card h3 { font-size: 11px; color: #888; word-break: break-all; flex: 1; }
+    .close-btn { cursor: pointer; font-size: 16px; color: #aaa; background: none; border: none; padding: 0 0 0 8px; }
+    .factor-row { display: flex; align-items: center; padding: 5px 0; border-bottom: 1px solid #eee; }
+    .factor-row:last-child { border-bottom: none; }
+    .factor-name { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+    .factor-bar-wrap { width: 70px; height: 8px; background: #eee; border-radius: 4px; margin: 0 8px; flex-shrink: 0; }
+    .factor-bar { height: 100%; border-radius: 4px; }
+    .factor-val { font-size: 12px; width: 54px; text-align: right; flex-shrink: 0; }
+    .pos { color: #2a9a2a; } .neg { color: #cc3333; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Геоаналитика</h1>
+  <div class="ctrl-group">
+    <label>Слой:</label>
+    <button class="layer-btn active" data-layer="predictions">Предсказания</button>
+    <button class="layer-btn" data-layer="growth_index">Индекс роста</button>
+  </div>
+  <div class="ctrl-group" id="category-group">
+    <label for="cat">Категория:</label>
+    <select id="cat"><option value="">Загрузка…</option></select>
+  </div>
+  <div class="ctrl-group" id="growth-sublayer-group" style="display:none">
+    <label>Показать:</label>
+    <button class="layer-btn active" data-sublayer="value">GrowthIndex</button>
+    <button class="layer-btn" data-sublayer="pattern">Паттерн</button>
+  </div>
+</div>
+
+<div id="map">
+<div id="legend">
+    <h3 id="legend-title">Значение</h3>
+    <div id="legend-gradient">
+      <div class="legend-bar"></div>
+      <div class="legend-labels"><span id="legend-min">0</span><span id="legend-max">1</span></div>
+    </div>
+    <div id="legend-pattern" style="display:none">
+      <div class="legend-pattern-row"><span class="legend-swatch" style="background:#f5c518"></span>Нестабильный рост</div>
+      <div class="legend-pattern-row"><span class="legend-swatch" style="background:#85c785"></span>Восстановление</div>
+      <div class="legend-pattern-row"><span class="legend-swatch" style="background:#2d9e2d"></span>Устойчивый рост</div>
+    </div>
+  </div>
+  <div id="hex-card">
+    <div class="card-header">
+      <h3 id="card-title"></h3>
+      <button class="close-btn" onclick="closeCard()">✕</button>
+    </div>
+    <div id="card-factors"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+const API = '/api';
+let currentLayer = 'predictions';
+let currentCategory = 'all';
+let currentGrowthSubLayer = 'value';
+let map = null;
+let mapReady = false;
+let currentAbortController = null;
+let geometryCache = null; // { features: Feature[], hexIndex: Map<h3_index, Feature> }
+
+function dbg(msg) { console.log('[geo]', msg); }
+
+// ── Инициализация карты ───────────────────────────────────────────────
+function initMap() {
+  dbg('Загрузка карты…');
+  map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+    center: [37.62, 55.75],
+    zoom: 11,
+  });
+
+  map.on('error', e => dbg('Ошибка карты: ' + (e.error?.message || e.type)));
+
+  map.on('load', () => {
+    dbg('Карта загружена');
+    mapReady = true;
+
+    map.addSource('hexes', {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    });
+
+    map.addLayer({
+      id: 'hex-fill',
+      type: 'fill',
+      source: 'hexes',
+      paint: {
+        'fill-color': ['coalesce', ['get', 'color'], '#2166ac'],
+        'fill-opacity': 0.35,
+      },
+    });
+
+    map.addLayer({
+      id: 'hex-outline',
+      type: 'line',
+      source: 'hexes',
+      paint: { 'line-color': '#ffffff', 'line-width': 0.8, 'line-opacity': 0.5 },
+    });
+
+    map.on('click', 'hex-fill', e => {
+      if (e.features.length > 0) onHexClick(e.features[0].properties.h3_index);
+    });
+    map.on('mouseenter', 'hex-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'hex-fill', () => { map.getCanvas().style.cursor = ''; });
+
+    loadHeatmap();
+    loadCategories();
+  });
+}
+
+// ── Применение цветовой шкалы и легенды ──────────────────────────────
+function applyColorScale(minVal, maxVal) {
+  const range = maxVal - minVal || 1;
+  document.getElementById('legend-gradient').style.display = 'block';
+  document.getElementById('legend-pattern').style.display = 'none';
+  document.getElementById('legend-title').textContent = 'Значение';
+  document.getElementById('legend-min').textContent = minVal.toFixed(1);
+  document.getElementById('legend-max').textContent = maxVal.toFixed(1);
+  map.setPaintProperty('hex-fill', 'fill-color', [
+    'interpolate', ['linear'], ['get', 'value'],
+    minVal,                '#2166ac',
+    minVal + range * 0.25, '#74add1',
+    minVal + range * 0.5,  '#e0f3f8',
+    minVal + range * 0.75, '#fdae61',
+    maxVal,                '#d73027',
+  ]);
+}
+
+// ── Загрузка тепловой карты (GeoJSON с сервера) ───────────────────────
+async function loadHeatmap() {
+  const isPredictions = currentLayer === 'predictions';
+  const isGrowth = currentLayer === 'growth_index';
+  document.getElementById('category-group').style.display = isPredictions ? 'flex' : 'none';
+  document.getElementById('growth-sublayer-group').style.display = isGrowth ? 'flex' : 'none';
+
+  if (isPredictions && !currentCategory) return;
+
+  if (currentAbortController) currentAbortController.abort();
+  currentAbortController = new AbortController();
+  const { signal } = currentAbortController;
+
+  dbg(`Запрос данных…`);
+  try {
+    let geojson;
+
+    if (isPredictions && geometryCache) {
+      // ── Быстрый путь: геометрия закэширована, грузим только значения ──
+      const url = `${API}/heatmap?layer=predictions&category=${encodeURIComponent(currentCategory)}`;
+      const resp = await fetch(url, { signal });
+      if (!resp.ok) { dbg(`Ошибка сервера: HTTP ${resp.status}`); return; }
+      const items = await resp.json(); // [{h3_index, value}, ...]
+
+      let minVal = Infinity, maxVal = -Infinity;
+      for (const item of items) {
+        const f = geometryCache.hexIndex.get(item.h3_index);
+        if (f) {
+          f.properties.value = item.value;
+          if (item.value < minVal) minVal = item.value;
+          if (item.value > maxVal) maxVal = item.value;
+        }
+      }
+      geojson = { type: 'FeatureCollection', value_min: minVal, value_max: maxVal,
+                  features: geometryCache.features };
+      dbg(`Быстрый путь: обновлено ${items.length} значений`);
+
+    } else {
+      // ── Полный путь: первая загрузка predictions или любой growth_index ──
+      let url = `${API}/heatmap/geojson?layer=${currentLayer}`;
+      if (isPredictions) url += `&category=${encodeURIComponent(currentCategory)}`;
+      const resp = await fetch(url, { signal });
+      if (!resp.ok) { dbg(`Ошибка сервера: HTTP ${resp.status}`); return; }
+      geojson = await resp.json();
+
+      if (isPredictions) {
+        const hexIndex = new Map(geojson.features.map(f => [f.properties.h3_index, f]));
+        geometryCache = { features: geojson.features, hexIndex };
+        dbg(`Кэш геометрии построен: ${geojson.features.length} гексагонов`);
+      }
+    }
+
+    if (isGrowth && currentGrowthSubLayer === 'pattern') {
+      map.setPaintProperty('hex-fill', 'fill-color', [
+        'match', ['get', 'cluster'],
+        -1, '#f5c518',
+        0,  '#85c785',
+        1,  '#2d9e2d',
+        '#888888',
+      ]);
+      document.getElementById('legend-gradient').style.display = 'none';
+      document.getElementById('legend-pattern').style.display = 'block';
+      document.getElementById('legend-title').textContent = 'Паттерн';
+    } else {
+      applyColorScale(geojson.value_min ?? 0, geojson.value_max ?? 1);
+    }
+
+    map.getSource('hexes').setData(geojson);
+    dbg(`Отрисовано ${geojson.features.length} гексагонов`);
+  } catch (e) {
+    if (e.name !== 'AbortError') dbg('Ошибка: ' + e.message);
+  }
+}
+
+// ── Карточка гекса ────────────────────────────────────────────────────
+async function onHexClick(h3idx) {
+  document.getElementById('card-title').textContent = h3idx;
+  document.getElementById('hex-card').style.display = 'block';
+  document.getElementById('card-factors').innerHTML = '<em style="color:#aaa">Загрузка…</em>';
+  try {
+    let url = `${API}/explain/${h3idx}?topk=5`;
+    if (currentCategory) url += `&category=${encodeURIComponent(currentCategory)}`;
+    const { prediction, growth, factors } = await fetch(url).then(r => r.json());
+
+    function metricRow(label, value, extra) {
+      const disp = value !== null && value !== undefined
+        ? (typeof value === 'number' ? value.toFixed(2) : value)
+        : '—';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #eee;">
+        <span style="font-size:12px;color:#666;">${label}</span>
+        <strong style="font-size:13px;color:#1e3a5f;">${disp}${extra || ''}</strong>
+      </div>`;
+    }
+
+    let metricsHtml = '<div style="margin-bottom:10px;">';
+    if (currentLayer === 'growth_index') {
+      if (growth) {
+        const dot = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${growth.pattern_color};margin-right:4px;vertical-align:middle;"></span>`;
+        metricsHtml += metricRow('GrowthIndex', growth.value);
+        metricsHtml += `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #eee;">
+          <span style="font-size:12px;color:#666;">Паттерн (кластер ${growth.cluster})</span>
+          <strong style="font-size:13px;color:#1e3a5f;">${dot}${growth.pattern}</strong>
+        </div>`;
+      }
+    } else {
+      if (prediction) {
+        if (currentCategory === 'all') {
+          const modeLabel = prediction.mode === 'saturation' ? ' (насыщение)' : prediction.mode === 'deficit' ? ' (дефицит)' : '';
+          metricsHtml += metricRow('Экономическая активность' + modeLabel, prediction.score);
+        }
+        if (currentCategory !== 'all') {
+          metricsHtml += metricRow('Экономическая активность', prediction.demand_pressure);
+          metricsHtml += metricRow('Экономическая активность<br><span style="color:#999">с учетом CI / DI</span>', prediction.score);
+          metricsHtml += metricRow('CI / DI', null, `${prediction.ci.toFixed(2)} / ${prediction.di.toFixed(2)}`);
+          metricsHtml += metricRow('Категория присутствует', prediction.has_category ? 'Да' : 'Нет');
+        }
+      }
+    }
+    metricsHtml += '</div>';
+
+    let factorsHtml = '';
+    if (currentLayer !== 'growth_index' && factors.length) {
+      const maxAbs = Math.max(...factors.map(f => Math.abs(f.shap_value)), 0.001);
+      factorsHtml = `<div style="font-size:11px;color:#999;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Факторы влияния</div>` +
+        factors.map(f => {
+          const pct = (Math.abs(f.shap_value) / maxAbs * 100).toFixed(0);
+          const color = f.sign === '+' ? '#2a9a2a' : '#cc3333';
+          const cls = f.sign === '+' ? 'pos' : 'neg';
+          const fv = f.feature_value !== null && f.feature_value !== undefined ? ` [${f.feature_value.toFixed(2)}]` : '';
+          return `<div class="factor-row">
+            <span class="factor-name" title="${f.feature}">${f.feature}</span>
+            <div class="factor-bar-wrap"><div class="factor-bar" style="width:${pct}%;background:${color}"></div></div>
+            <span class="factor-val ${cls}">${f.sign}${Math.abs(f.shap_value).toFixed(3)}</span>
+          </div>`;
+        }).join('');
+    }
+
+    document.getElementById('card-factors').innerHTML = metricsHtml + factorsHtml;
+  } catch (e) {
+    document.getElementById('card-factors').innerHTML = `<em style="color:#c33">${e.message}</em>`;
+  }
+}
+
+function closeCard() { document.getElementById('hex-card').style.display = 'none'; }
+
+// ── Загрузка категорий ────────────────────────────────────────────────
+async function loadCategories() {
+  try {
+    const raw = await fetch(`${API}/categories`).then(r => r.json());
+    const cats = ['all', ...raw.filter(c => c !== 'all')];
+    const sel = document.getElementById('cat');
+    sel.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    currentCategory = cats[0] || null;
+    sel.addEventListener('change', () => { currentCategory = sel.value; closeCard(); loadHeatmap(); });
+  } catch (e) {
+    dbg('Ошибка загрузки категорий: ' + e.message);
+  }
+}
+
+// ── Переключатель слоёв ───────────────────────────────────────────────
+document.querySelectorAll('#header > .ctrl-group:nth-child(2) .layer-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#header > .ctrl-group:nth-child(2) .layer-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentLayer = btn.dataset.layer;
+    closeCard();
+    loadHeatmap();
+  });
+});
+
+// ── Переключатель подслоя роста ───────────────────────────────────────
+document.querySelectorAll('#growth-sublayer-group .layer-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#growth-sublayer-group .layer-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentGrowthSubLayer = btn.dataset.sublayer;
+    closeCard();
+    if (mapReady) loadHeatmap();
+  });
+});
+
+initMap();
+</script>
+</body>
+</html>
