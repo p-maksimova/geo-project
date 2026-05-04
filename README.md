@@ -13,19 +13,25 @@
 
 ## Быстрый старт
 
+**Локально (uv):**
+
 ```bash
-# Установить зависимости
 uv sync
-
-# Сгенерировать mock-данные (один раз)
-uv run python scripts/generate_mock_data.py
-
-# Запустить сервер
+uv run python scripts/generate_mock_data.py  # один раз
 uv run python main.py
+```
+
+**Docker:**
+
+```bash
+uv run python scripts/generate_mock_data.py  # генерирует ./data на хосте
+docker compose up --build
 ```
 
 - Приложение: http://localhost:8000
 - Swagger UI: http://localhost:8000/docs
+
+Переменные окружения (см. `.env.example`): `DATA_DIR` (путь к папке с Parquet, дефолт `data`), `HOST` (дефолт `0.0.0.0`), `PORT` (дефолт `8000`).
 
 ## Пользовательский сценарий
 
@@ -105,5 +111,8 @@ geo-project/
 │   └── index.html               # Весь фронтенд (vanilla JS, MapLibre GL JS)
 ├── scripts/
 │   └── generate_mock_data.py    # Генератор синтетических Parquet-данных
+├── Dockerfile                   # Multi-stage build (builder + runtime)
+├── docker-compose.yml           # Один сервис, volume ./data:/app/data
+├── .env.example                 # Контракт переменных окружения
 └── data/                        # Parquet-артефакты (не в git)
 ```

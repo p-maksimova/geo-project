@@ -1,0 +1,10 @@
+services:
+  geo-api:
+    build: .
+    ports:
+      - "${PORT:-8000}:${PORT:-8000}"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - path: .env
+        required: false

@@ -24,11 +24,23 @@ uv add <package>
 
 Swagger UI доступен по адресу http://localhost:8000/docs.
 
+## Docker
+
+```bash
+# Собрать образ и запустить (данные монтируются из ./data)
+docker compose up --build
+
+# Только сборка образа
+docker build -t geo-project .
+```
+
+Переменные окружения (см. `.env.example`): `DATA_DIR` (путь к папке с Parquet внутри контейнера, дефолт `data`), `HOST` (дефолт `0.0.0.0`), `PORT` (дефолт `8000`). Скопировать `.env.example` → `.env` для переопределения.
+
 ## Architecture
 
 Сервис читает Parquet-артефакты через DuckDB и отдаёт их как REST API для визуализации на карте.
 
-**Точка входа:** `main.py` — создаёт FastAPI-приложение через `app.create_app()` и запускает uvicorn с `reload=True`.
+**Точка входа:** `main.py` — создаёт FastAPI-приложение через `app.create_app()` и запускает uvicorn (`reload=False`). Хост/порт берутся из `$HOST`/`$PORT`.
 
 **`app/__init__.py`** — фабрика приложения: регистрирует роуты, `GZipMiddleware` (minimum_size=1000), CORS (только GET), StaticFiles, запускает `db.init_db()` через `lifespan`.
 
@@ -42,7 +54,7 @@ Swagger UI доступен по адресу http://localhost:8000/docs.
 
 **`app/models.py`** — все Pydantic-схемы: `HexValue`, `ShapFactor`, `TopLocation`, `PredictionDetail`, `GrowthDetail`, `ExplainResponse`, `HealthResponse`, `LayerType`.
 
-**`app/config.py`** — пути к Parquet-файлам (`DATA_DIR / *.parquet`), константы карты: `MAP_CENTER_LAT=55.75`, `MAP_CENTER_LON=37.62`, `MAP_ZOOM=11`, `H3_RESOLUTION=10`.
+**`app/config.py`** — пути к Parquet-файлам (`DATA_DIR / *.parquet`). `DATA_DIR` читается из `$DATA_DIR` (дефолт `"data"`). Константы карты: `MAP_CENTER_LAT=55.75`, `MAP_CENTER_LON=37.62`, `MAP_ZOOM=11`, `H3_RESOLUTION=10`.
 
 **`static/index.html`** — весь фронтенд в одном файле, vanilla JS без сборщика. Зависимости: MapLibre GL JS. Гексагоны рендерятся как нативные MapLibre `fill`-слои. Цвет задаётся через MapLibre `interpolate`-выражение на GPU — JS-цикл по фичам не используется.
 
