@@ -57,6 +57,26 @@
     .factor-bar { height: 100%; border-radius: 4px; }
     .factor-val { font-size: 12px; width: 54px; text-align: right; flex-shrink: 0; }
     .pos { color: #2a9a2a; } .neg { color: #cc3333; }
+
+    #topk-card {
+      position: absolute; top: 12px; left: 12px; z-index: 10;
+      background: rgba(255,255,255,0.97); border-radius: 10px;
+      padding: 14px 16px; color: #222; font-size: 13px;
+      width: 220px; display: none;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.18);
+      max-height: calc(100vh - 100px); overflow-y: auto;
+    }
+    .topk-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 6px; border-radius: 5px; cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .topk-item:last-child { border-bottom: none; }
+    .topk-item:hover { background: #f0f4f8; }
+    .topk-item.active { background: #e3edf7; }
+    .topk-rank { font-size: 11px; color: #bbb; width: 18px; text-align: right; flex-shrink: 0; }
+    .topk-id { font-size: 10px; color: #888; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topk-val { font-size: 12px; font-weight: 600; color: #1e3a5f; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -80,6 +100,13 @@
 </div>
 
 <div id="map">
+  <div id="topk-card">
+    <div class="card-header">
+      <h3 id="topk-title" style="font-size:12px;color:#555;">Топ 20 локаций</h3>
+      <button class="close-btn" onclick="closeTopK()">✕</button>
+    </div>
+    <div id="topk-list"></div>
+  </div>
 <div id="legend">
     <h3 id="legend-title">Значение</h3>
     <div id="legend-gradient">
@@ -111,8 +138,58 @@ let map = null;
 let mapReady = false;
 let currentAbortController = null;
 let geometryCache = null; // { features: Feature[], hexIndex: Map<h3_index, Feature> }
+let selectedTopKH3 = null;
 
 function dbg(msg) { console.log('[geo]', msg); }
+
+// ── Центр гексагона из кэша геометрии ────────────────────────────────
+function hexCenter(h3idx) {
+  const f = geometryCache?.hexIndex.get(h3idx);
+  if (!f) return null;
+  const coords = f.geometry.coordinates[0].slice(0, -1);
+  const lng = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+  const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length;
+  return [lng, lat];
+}
+
+// ── Топ-20 локаций ────────────────────────────────────────────────────
+async function loadTopK() {
+  const card = document.getElementById('topk-card');
+  if (currentLayer !== 'predictions' || !currentCategory) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  const label = currentCategory === 'all' ? 'все категории' : currentCategory;
+  document.getElementById('topk-title').textContent = `Топ 20 — ${label}`;
+  document.getElementById('topk-list').innerHTML = '<em style="color:#aaa;font-size:12px">Загрузка…</em>';
+  selectedTopKH3 = null;
+  try {
+    const url = `${API}/topk?category=${encodeURIComponent(currentCategory)}&n=20`;
+    const items = await fetch(url).then(r => r.json());
+    document.getElementById('topk-list').innerHTML = items.map(item =>
+      `<div class="topk-item" data-h3="${item.h3_index}" onclick="selectTopKItem('${item.h3_index}')">
+        <span class="topk-rank">${item.rank}</span>
+        <span class="topk-id" title="${item.h3_index}">${item.h3_index}</span>
+        <span class="topk-val">${item.value.toFixed(1)}</span>
+      </div>`
+    ).join('');
+  } catch(e) {
+    document.getElementById('topk-list').innerHTML =
+      `<em style="color:#c33;font-size:12px">${e.message}</em>`;
+  }
+}
+
+function selectTopKItem(h3idx) {
+  document.querySelectorAll('.topk-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.topk-item[data-h3="${h3idx}"]`)?.classList.add('active');
+  selectedTopKH3 = h3idx;
+  const center = hexCenter(h3idx);
+  if (center) map.flyTo({ center, zoom: 14, duration: 800 });
+  onHexClick(h3idx);
+}
+
+function closeTopK() { document.getElementById('topk-card').style.display = 'none'; }
 
 // ── Инициализация карты ───────────────────────────────────────────────
 function initMap() {
@@ -324,7 +401,11 @@ async function onHexClick(h3idx) {
   }
 }
 
-function closeCard() { document.getElementById('hex-card').style.display = 'none'; }
+function closeCard() {
+  document.getElementById('hex-card').style.display = 'none';
+  document.querySelectorAll('.topk-item').forEach(el => el.classList.remove('active'));
+  selectedTopKH3 = null;
+}
 
 // ── Загрузка категорий ────────────────────────────────────────────────
 async function loadCategories() {
@@ -334,7 +415,8 @@ async function loadCategories() {
     const sel = document.getElementById('cat');
     sel.innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
     currentCategory = cats[0] || null;
-    sel.addEventListener('change', () => { currentCategory = sel.value; closeCard(); loadHeatmap(); });
+    loadTopK();
+    sel.addEventListener('change', () => { currentCategory = sel.value; closeCard(); loadHeatmap(); loadTopK(); });
   } catch (e) {
     dbg('Ошибка загрузки категорий: ' + e.message);
   }
@@ -348,6 +430,7 @@ document.querySelectorAll('#header > .ctrl-group:nth-child(2) .layer-btn').forEa
     currentLayer = btn.dataset.layer;
     closeCard();
     loadHeatmap();
+    loadTopK();
   });
 });
 

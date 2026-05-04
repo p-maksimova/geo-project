@@ -46,11 +46,13 @@ Swagger UI доступен по адресу http://localhost:8000/docs.
 
 **`static/index.html`** — весь фронтенд в одном файле, vanilla JS без сборщика. Зависимости: MapLibre GL JS. Гексагоны рендерятся как нативные MapLibre `fill`-слои. Цвет задаётся через MapLibre `interpolate`-выражение на GPU — JS-цикл по фичам не используется.
 
-Ключевые переменные состояния: `currentLayer`, `currentCategory`, `currentAbortController` (отменяет предыдущий fetch при смене категории), `geometryCache` (кэш геометрии predictions: `{ features, hexIndex: Map<h3_index, Feature> }`).
+Ключевые переменные состояния: `currentLayer`, `currentCategory`, `currentAbortController` (отменяет предыдущий fetch при смене категории), `geometryCache` (кэш геометрии predictions: `{ features, hexIndex: Map<h3_index, Feature> }`), `selectedTopKH3`.
 
 **Логика загрузки данных (две ветки):**
 - **Полный путь** — первая загрузка predictions или любой growth_index: `GET /api/heatmap/geojson`, после чего строится `hexIndex` и сохраняется `geometryCache`.
 - **Быстрый путь** — смена категории при наличии кэша: `GET /api/heatmap?layer=predictions&category=<cat>`, значения обновляются в `geometryCache.features` за один цикл, min/max пересчитываются на клиенте.
+
+**Карточка топ-20 (`#topk-card`, слева):** отображается только на слое predictions. `loadTopK()` вызывается независимо от `loadHeatmap()` (быстрый запрос `GET /api/topk?category=<cat>&n=20`). `selectTopKItem(h3idx)` подсвечивает строку, вызывает `map.flyTo` к центру гексагона (центр вычисляет `hexCenter()` из `geometryCache.hexIndex` — среднее координат границы) и открывает `onHexClick`. `closeCard()` сбрасывает подсветку топк-списка.
 
 ## Data files
 
