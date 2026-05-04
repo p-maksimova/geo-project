@@ -17,14 +17,14 @@
 
 ```bash
 uv sync
-uv run python scripts/generate_mock_data.py  # один раз
+uv run python scripts/generate_mock_data.py  # при отсутствии данных - генерирует урезнанный тестовый набор
 uv run python main.py
 ```
 
 **Docker:**
 
 ```bash
-uv run python scripts/generate_mock_data.py  # генерирует ./data на хосте
+uv run python scripts/generate_mock_data.py  # генерирует урезнанный тестовый набор ./data на хосте
 docker compose up --build
 ```
 
@@ -91,6 +91,29 @@ DuckDB загружает файлы как таблицы в памяти пр�
 
 **Mock vs. реальные данные:** скрипт генерирует ~1 261 гексагон (RING_RADIUS=20); реальные данные содержат ~144 931 гексагон. Для приближения к боевому масштабу увеличьте `RING_RADIUS` в `scripts/generate_mock_data.py`.
 
+## Тесты
+
+```bash
+# Все тесты + покрытие
+uv run pytest tests/ -v --cov=app --cov-report=term-missing
+
+# Один тест
+uv run pytest tests/test_api_positive.py::test_health -v
+
+# Только проверка схем Parquet (без поднятия сервера)
+uv run pytest tests/test_artifacts.py -v
+
+# Бенчмарки производительности на реальных данных (~60 с)
+uv run pytest tests/test_system.py --benchmark-json=benchmark_report.json
+```
+
+Бенчмарки на реальных данных (144 931 гексагон):
+
+| Эндпоинт | Mean |
+|---|---|
+| `/api/heatmap` (только значения) | ~1.1 с |
+| `/api/heatmap/geojson` (GeoJSON с геометрией) | ~5.9 с |
+
 ## Структура проекта
 
 ```
@@ -107,6 +130,12 @@ geo-project/
 │       ├── categories.py        # /api/categories
 │       ├── topk.py              # /api/topk
 │       └── health.py            # /api/health
+├── tests/
+│   ├── conftest.py              # Session-scoped TestClient
+│   ├── test_api_positive.py     # Позитивные сценарии
+│   ├── test_api_negative.py     # Негативные сценарии
+│   ├── test_artifacts.py        # Pandera-схемы Parquet-файлов
+│   └── test_system.py           # GZip-middleware + бенчмарки
 ├── static/
 │   └── index.html               # Весь фронтенд (vanilla JS, MapLibre GL JS)
 ├── scripts/

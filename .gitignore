@@ -11,3 +11,8 @@ wheels/
 .env  
 
 archive/
+
+# Test and coverage reports
+benchmark_report.json
+.coverage
+.benchmarks

@@ -24,6 +24,33 @@ uv add <package>
 
 Swagger UI доступен по адресу http://localhost:8000/docs.
 
+## Tests
+
+```bash
+# Все тесты + отчёт покрытия
+uv run pytest tests/ -v --cov=app --cov-report=term-missing
+
+# Только один тест
+uv run pytest tests/test_api_positive.py::test_health -v
+
+# Только контракт артефактов (не поднимает сервер)
+uv run pytest tests/test_artifacts.py -v
+
+# Бенчмарки производительности на реальных данных (медленно, ~60 с)
+uv run pytest tests/test_system.py --benchmark-json=benchmark_report.json
+```
+
+Тесты требуют наличия Parquet-файлов в `data/` (запустить `generate_mock_data.py` перед первым запуском). `test_system.py::test_benchmark_*` пропускается (`pytest.skip`) если файлы отсутствуют.
+
+Стек: `pytest`, `pytest-cov`, `pytest-benchmark`, `pandera` (dev-зависимости), `httpx` (транзитивно через `fastapi[standard]`). `TestClient` встроен в FastAPI/Starlette.
+
+Структура тестов:
+- `tests/conftest.py` — session-scoped `TestClient` (единственная инициализация БД на сессию)
+- `tests/test_api_positive.py` — golden path по всем эндпоинтам
+- `tests/test_api_negative.py` — контракт ошибок (422, пустой ExplainResponse)
+- `tests/test_artifacts.py` — pandera-схемы трёх Parquet-файлов + H3-валидность
+- `tests/test_system.py` — gzip-заголовок, бенчмарки лёгкого и полного пути heatmap
+
 ## Docker
 
 ```bash
@@ -70,7 +97,7 @@ docker build -t geo-project .
 
 `data/` содержит три Parquet-файла (не в git, генерируются скриптом). Реальные колонки:
 
-- `predictions.parquet` — `H3Id, category, mode, DemandPressure, CI, DI, score, has_category`
+- `predictions.parquet` — `H3Id, category, mode, DemandPressure, CI, DI, score, has_category` (колонка `has_category` содержит NULL в реальных данных → dtype `object`, не `bool`)
 - `shap_values.parquet` — `H3Id, DemandPressure, factor_1..5, value_1..5, sign_1..5, feature_value_1..5` (wide-формат, топ-5 факторов на строку)
 - `growth_index.parquet` — `H3Id, cluster, pattern, pattern_color, GrowthIndex`
 
