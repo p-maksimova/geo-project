@@ -95,7 +95,7 @@ docker build -t geo-project .
 
 ## Data files
 
-`data/` содержит три Parquet-файла (не в git, генерируются скриптом). Реальные колонки:
+`data/` содержит три Parquet-файла (не в git, могут генерироваться скриптом как mock-данные). Реальные колонки:
 
 - `predictions.parquet` — `H3Id, category, mode, DemandPressure, CI, DI, score, has_category` (колонка `has_category` содержит NULL в реальных данных → dtype `object`, не `bool`)
 - `shap_values.parquet` — `H3Id, DemandPressure, factor_1..5, value_1..5, sign_1..5, feature_value_1..5` (wide-формат, топ-5 факторов на строку)

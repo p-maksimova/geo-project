@@ -17,14 +17,14 @@
 
 ```bash
 uv sync
-uv run python scripts/generate_mock_data.py  # при отсутствии данных - генерирует урезнанный тестовый набор
+uv run python scripts/generate_mock_data.py  # при отсутствии данных генерирует тестовый набор
 uv run python main.py
 ```
 
 **Docker:**
 
 ```bash
-uv run python scripts/generate_mock_data.py  # генерирует урезнанный тестовый набор ./data на хосте
+uv run python scripts/generate_mock_data.py  # генерирует тестовый набор ./data на хосте
 docker compose up --build
 ```
 
@@ -79,7 +79,7 @@ docker compose up --build
 
 ## Данные
 
-Три Parquet-файла в `data/` (не в git, генерируются скриптом):
+Три Parquet-файла в `data/`:
 
 | Файл | Ключевые колонки |
 |---|---|
@@ -89,7 +89,7 @@ docker compose up --build
 
 DuckDB загружает файлы как таблицы в памяти при старте. Доступ к единственному соединению сериализован через `threading.Lock` — FastAPI выполняет синхронные эндпоинты в thread pool.
 
-**Mock vs. реальные данные:** скрипт генерирует ~1 261 гексагон (RING_RADIUS=20); реальные данные содержат ~144 931 гексагон. Для приближения к боевому масштабу увеличьте `RING_RADIUS` в `scripts/generate_mock_data.py`.
+**Mock vs. реальные данные:** скрипт генерирует ~1 261 гексагон (RING_RADIUS=20); реальные данные содержат ~144 931 гексагон. Для изменения масштаба используйте `RING_RADIUS` в `scripts/generate_mock_data.py`.
 
 ## Тесты
 
