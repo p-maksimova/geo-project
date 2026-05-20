@@ -229,6 +229,14 @@ function initMap() {
       paint: { 'line-color': '#ffffff', 'line-width': 0.8, 'line-opacity': 0.5 },
     });
 
+    map.addLayer({
+      id: 'hex-selected',
+      type: 'line',
+      source: 'hexes',
+      filter: ['==', ['get', 'h3_index'], ''],
+      paint: { 'line-color': '#00246B', 'line-width': 2.5, 'line-opacity': 1 },
+    });
+
     map.on('click', 'hex-fill', e => {
       if (e.features.length > 0) onHexClick(e.features[0].properties.h3_index);
     });
@@ -332,8 +340,16 @@ async function loadHeatmap() {
   }
 }
 
+function setSelectedHex(h3idx) {
+  if (map.getLayer('hex-selected')) {
+    map.setFilter('hex-selected',
+      h3idx ? ['==', ['get', 'h3_index'], h3idx] : ['==', ['get', 'h3_index'], '']);
+  }
+}
+
 // ── Карточка гекса ────────────────────────────────────────────────────
 async function onHexClick(h3idx) {
+  setSelectedHex(h3idx);
   document.getElementById('card-title').textContent = h3idx;
   document.getElementById('hex-card').style.display = 'block';
   document.getElementById('card-factors').innerHTML = '<em style="color:#aaa">Загрузка…</em>';
@@ -402,6 +418,7 @@ async function onHexClick(h3idx) {
 }
 
 function closeCard() {
+  setSelectedHex(null);
   document.getElementById('hex-card').style.display = 'none';
   document.querySelectorAll('.topk-item').forEach(el => el.classList.remove('active'));
   selectedTopKH3 = null;
